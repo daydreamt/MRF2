@@ -53,33 +53,41 @@ class mutable_MRF words_ (priors_: Tensor.t) (pairwise_potential_: Tensor.t) ver
   						    (List.range 0 ((List.length words_) - 1))
   						    (List.range 1 (List.length words_)))
   method get_neighbour_map = neighbour_map  						    
+
   method get_neighbours idx = match (idx >= 0 && idx < n_words) with
   	true -> Map.Poly.find_exn neighbour_map idx  
 	| _    -> []
+
   method get_univariate_potential_array idx = match (idx >= 0 && idx < n_words) with 
   	true ->  let x = Tensor.get_float1 priors idx in 
                  Tensor.float_vec [1. -. x; x]
         | false -> Tensor.float_vec [0.; 0.]
+
   method get_pairwise_potential_array (idx1 : int) (idx2 : int) = pairwise_potential
+
   method get_initial_messages =
 	Map.Poly.of_alist_exn (List.map (get_message_keys neighbour_map) ~f:(fun k -> (k, Tensor.float_vec [0.5; 0.5;])))
+
   method get_initial_belief idx =
 	let univariate = self#get_univariate_potential_array idx in
 	let message_keys = get_message_keys_single neighbour_map idx in
 	let all_initial_messages = self#get_initial_messages in
 	let messages = List.map message_keys ~f:(fun x-> Map.Poly.find_exn all_initial_messages x) in
 	List.fold ~init:univariate ~f:Tensor.mul messages
+
   method get_belief messages idx =
   	let univariate = self#get_univariate_potential_array idx in
   	let message_keys = get_message_keys_single neighbour_map idx in
   	let message_subset = List.map message_keys ~f:(fun x-> Map.Poly.find_exn messages x) in
 	List.fold ~init:univariate ~f:Tensor.mul message_subset
+
   method get_message messages (source_idx : int) (target_idx : int)  =
 	let m = Tensor.mm (self#get_univariate_potential_array target_idx) pairwise_potential in
 	let m = match (get_product_of_messages_to_except messages source_idx target_idx) with
 	Some x -> Tensor.mul m x
 	| None -> m in
 	normalize m
+
   method make_inference ?(noise=0.00000001) ?(eps=0.000001) =
 	let noisy_map_dist l1 l2 = List.map2_exn ~f:Tensor.dist
 						 (l1 |> Map.Poly.data)
@@ -95,8 +103,9 @@ class mutable_MRF words_ (priors_: Tensor.t) (pairwise_potential_: Tensor.t) ver
 	    let diff = (Float.abs (Float.sub cur_dist new_dist)) in
   	    if (Float.compare diff eps) > 0 then iter new_messages new_dist (iter_number + 1) else (messages, iter_number) in
   	iter initial_messages init_dist 0
+
   method make_inference_and_get_beliefs =
   	let messages, _ = self#make_inference ~noise:0.00000001 ~eps:0.000001 in
-  	self#get_neighbour_map |> Map.Poly.keys |> List.map ~f:(fun node_idx -> self#get_belief messages node_idx |> normalize) 
+  	self#get_neighbour_map |> Map.Poly.keys |> List.map ~f:(fun node_idx -> self#get_belief messages node_idx |> normalize)
 end
 ;;
